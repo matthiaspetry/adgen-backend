@@ -6,6 +6,9 @@ from functools import wraps
 from supabase import create_client
 import os
 from dotenv import load_dotenv
+# Import Flask-Limiter components
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Load environment variables
 load_dotenv()
@@ -18,9 +21,21 @@ supabase = create_client(
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, supports_credentials=True)  # Allow cookies for session handling
+CORS(app, supports_credentials=True)
+
+# Initialize Flask-Limiter
+limiter = Limiter(
+    get_remote_address, # Use the client's IP address as the key
+    app=app,
+    default_limits=["200 per day", "50 per hour"], # Example default limits for all routes
+    storage_uri="memory://" # Use in-memory storage (consider Redis for production)
+)
 
 # Auth decorator
+# Apply a stricter limit specifically to authentication checks if desired
+# Note: Applying it here would limit *any* route using @require_auth
+# It might be better to apply limits directly on the routes themselves.
+# @limiter.limit("10 per minute") # Example: Limit auth checks
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -58,11 +73,16 @@ def require_auth(f):
 def index():
     return jsonify({"message": "Backend is live"})
 
+# Apply rate limit to the protected route
 @app.route("/protected", methods=["GET"])
+@limiter.limit("15 per minute") # Example: Limit this specific route
 @require_auth
 def protected():
-    user_email = getattr(request.user, 'email', 'unknown') # Access email attribute directly
+    print(request.user.id)
+    user_email = getattr(request.user, 'email', 'unknown')
     return jsonify({"message": f"Hello {user_email}!"})
+
+# You might also want to rate limit login/signup routes if you add them
 
 # Main
 if __name__ == "__main__":
